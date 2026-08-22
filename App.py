@@ -1,113 +1,67 @@
 import streamlit as st
+from jobspy import scrape_jobs
+from pypdf import PdfReader
 
-# Configuración de la página
-st.set_page_config(
-    page_title="Buscador de Empleo Automatizado", page_icon="💼", layout="wide"
-)
+# --- CONFIGURACIÓN ---
+st.set_page_config(page_title="Buscador de Empleo Pro", page_icon="💼", layout="wide")
 
-st.title("💼 Buscador de Empleo en Tiempo Real")
-st.markdown(
-    "Configura tus requisitos, encuentra ofertas compatibles y postúlate con un solo clic."
-)
+# --- FUNCIONES DE AYUDA ---
+def extract_text_from_pdf(file):
+    reader = PdfReader(file)
+    text = ""
+    for page in reader.pages:
+        text += page.extract_text() or ""
+    return text
 
-# --- 1. BARRA LATERAL: REQUISITOS DEL USUARIO ---
-st.sidebar.header("Tus Requisitos y Perfil")
+def calculate_match(cv_text, job_description):
+    if not cv_text or not job_description: return 0
+    cv_words = set(cv_text.lower().split())
+    job_words = set(job_description.lower().split())
+    intersection = cv_words.intersection(job_words)
+    # Puntuación simple basada en solapamiento de palabras
+    return round((len(intersection) / len(job_words)) * 100) if job_words else 0
 
-puesto_buscado = st.sidebar.text_input(
-    "Puesto o Rol deseado", value="Seguridad Patrimonial"
-)
-ubicacion = st.sidebar.selectbox(
-    "Ubicación",
-    [
-        "Buenos Aires, Argentina",
-        "Capital Federal (CABA)",
-        "Buenos Aires (GBA)",
-        "Remoto",
-    ],
-)
-modalidad = st.sidebar.selectbox("Modalidad", ["Presencial", "Híbrido", "Remoto"])
+# --- BARRA LATERAL ---
+st.sidebar.header("Tus Requisitos")
+puesto = st.sidebar.text_input("Puesto", value="Seguridad Patrimonial")
+ubicacion = st.sidebar.text_input("Ubicación", value="Buenos Aires")
+cv_file = st.sidebar.file_uploader("Sube tu CV (PDF)", type=["pdf"])
 
-# Habilidades clave
-habilidades = st.sidebar.multiselect(
-    "Tus Habilidades / Competencias",
-    [
-        "Control de accesos",
-        "Monitoreo CCTV",
-        "Gestión de riesgos",
-        "Seguridad física",
-        "Coordinación de equipos",
-        "Normas ISO",
-    ],
-    default=["Seguridad física", "Monitoreo CCTV"],
-)
+buscar = st.sidebar.button("Buscar Ofertas Reales", type="primary")
 
-st.sidebar.markdown("---")
-st.sidebar.subheader("Adjunta tu CV")
-cv_file = st.sidebar.file_uploader(
-    "Sube tu CV en formato PDF", type=["pdf"], key="cv_uploader"
-)
+# --- LÓGICA PRINCIPAL ---
+st.title("💼 Buscador de Empleo Automatizado")
 
-# Botón principal de búsqueda
-buscar = st.sidebar.button("Buscar Ofertas Disponibles", type="primary")
-
-# --- 2. PANEL PRINCIPAL: RESULTADOS ---
 if buscar:
-    st.subheader(
-        f"Resultados en vivo para: {puesto_buscado} en {ubicacion}"
-    )
+    with st.spinner("Conectando con portales de empleo..."):
+        try:
+            # JobSpy realiza el scraping en tiempo real
+            jobs = scrape_jobs(
+                site_name=["linkedin", "indeed"],
+                search_term=puesto,
+                location=ubicacion,
+                results_wanted=5
+            )
+            st.session_state.jobs = jobs
+        except Exception as e:
+            st.error(f"Error al buscar: {e}")
 
-    with st.spinner("Buscando ofertas actualizadas..."):
-        # NOTA TÉCNICA: Aquí es donde puedes integrar librerías de Python como 
-        # python-jobspy o llamadas a APIs de empleo (LinkedIn/Indeed/Google Jobs)
-        
-        # Simulación conectada a parámetros reales ingresados
-        ofertas_encontradas = [
-            {
-                "id": 1,
-                "empresa": "Servicios de Vigilancia y Custodia BA",
-                "puesto": f"Especialista en {puesto_buscado}",
-                "ubicacion": ubicacion,
-                "modalidad": modalidad,
-                "enlace": "https://www.linkedin.com/jobs/",
-            },
-            {
-                "id": 2,
-                "empresa": "Protección y Logística S.A.",
-                "puesto": f"Supervisor de Operaciones - {puesto_buscado}",
-                "ubicacion": ubicacion,
-                "modalidad": modalidad,
-                "enlace": "https://ar.indeed.com/",
-            }
-        ]
-
-    if not ofertas_encontradas:
-        st.info("No se encontraron ofertas activas con los filtros especificados.")
-    else:
-        for oferta in ofertas_encontradas:
-            with st.container(border=True):
-                col1, col2 = st.columns([3, 1])
-
-                with col1:
-                    st.markdown(f"### {oferta['puesto']}")
-                    st.markdown(
-                        f"**Empresa:** {oferta['empresa']} | **Ubicación:** {oferta['ubicacion']} | **Modalidad:** {oferta['modalidad']}"
-                    )
-                    st.markdown(f"[Ver oferta original en la plataforma]({oferta['enlace']})")
-
-                with col2:
-                    st.write("") 
-                    btn_postular = st.button("Enviar CV", key=f"btn_{oferta['id']}")
-
-                    if btn_postular:
-                        if cv_file is not None:
-                            st.success(
-                                f"¡Postulación enviada correctamente a {oferta['empresa']}!"
-                            )
-                        else:
-                            st.error(
-                                "Sube tu CV en la barra lateral antes de postularte."
-                            )
+# --- MOSTRAR RESULTADOS ---
+if "jobs" in st.session_state:
+    cv_text = extract_text_from_pdf(cv_file) if cv_file else ""
+    
+    for _, job in st.session_state.jobs.iterrows():
+        with st.container(border=True):
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.subheader(job['title'])
+                st.write(f"**Empresa:** {job['company']} | **Ubicación:** {job['location']}")
+                
+                # Análisis de Match
+                score = calculate_match(cv_text, job['description'] or "")
+                st.progress(score/100, text=f"Compatibilidad con tu CV: {score}%")
+                
+            with col2:
+                st.link_button("Ver oferta", job['job_url'])
 else:
-    st.info(
-        "👈 Ajusta tus filtros de búsqueda en la barra lateral y presiona **'Buscar Ofertas Disponibles'**."
-    )
+    st.info("👈 Configura los parámetros y presiona buscar para iniciar.")
