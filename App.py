@@ -1,15 +1,23 @@
 import streamlit as st
 from io import BytesIO
+import json
 
-# Intentar importar la librería para leer PDF de forma segura
+# Intentar importar librerías necesarias
 try:
     import pypdf
     PDF_READER_AVAILABLE = True
 except ImportError:
     PDF_READER_AVAILABLE = False
 
+try:
+    from google import genai
+    from google.genai import types
+    AI_AVAILABLE = True
+except ImportError:
+    AI_AVAILABLE = False
+
 # --- CONFIGURACIÓN DE LA PÁGINA ---
-st.set_page_config(page_title="Buscador de Empleo Pro", page_icon="💼", layout="wide")
+st.set_page_config(page_title="Buscador de Empleo Pro en Vivo", page_icon="💼", layout="wide")
 
 # Inicializar la "memoria" de la aplicación (Session State)
 if "jobs" not in st.session_state:
@@ -47,85 +55,89 @@ if cv_file is not None:
         st.session_state.cv_texto = cv_file.getvalue().decode("utf-8")
         st.sidebar.success("¡CV en Texto leído con éxito!")
 
-buscar = st.sidebar.button("🔍 Buscar Ofertas Disponibles", type="primary")
+buscar = st.sidebar.button("🔍 Buscar Ofertas Reales en la Web", type="primary")
 
 # --- CUERPO PRINCIPAL DE LA APP ---
-st.title("💼 Buscador de Empleo Automatizado - Tiempo Real")
-st.write("Gestiona, filtra y redacta mensajes personalizados para tus ofertas laborales ideales en Buenos Aires.")
+st.title("💼 Buscador de Empleo en Tiempo Real")
+st.write("Buscando vacantes reales y vigentes conectadas directamente a internet.")
 
 if buscar:
-    with st.spinner("Conectando con fuentes de empleo en tiempo real y analizando tu perfil..."):
-        # Base de ofertas reales obtenidas de portales activos en Buenos Aires
-        ofertas_encontradas = [
-            {
-                "id": 1,
-                "empresa": "Adecco Argentina (para Compañía Líder)",
-                "title": f"Analista de {puesto}",
-                "location": "Zárate / Buenos Aires",
-                "modalidad": "Presencial",
-                "fecha": "Reciente",
-                "description": "Garantizar la protección de activos físicos, instalaciones y personas mediante la prevención, detección y control de riesgos. Manejo de sistemas de seguridad física (CCTV, control de accesos, alarmas) y coordinación de proveedores.",
-                "job_url": "https://www.bumeran.com.ar/empleos/analista-de-seguridad-patrimonial-adecco-argentina-2182858.html"
-            },
-            {
-                "id": 2,
-                "empresa": "Bunge Argentina S.A.",
-                "title": f"Especialista en {puesto} Sur",
-                "location": "Buenos Aires (Zona Portuaria / Ing. White)",
-                "modalidad": "Presencial",
-                "fecha": "Actualizada",
-                "description": "Liderar y estandarizar la protección de activos y seguridad física/portuaria, incorporando nuevas tecnologías, metodologías y mejores prácticas globales para reducir la exposición al riesgo.",
-                "job_url": "https://www.bumeran.com.ar/empleos/especialista-en-seguridad-patrimonial-sur-bunge-argentina-s.a-1118405962.html"
-            },
-            {
-                "id": 3,
-                "empresa": "GA.Ma Italy",
-                "title": f"Gerente / Líder de {puesto}",
-                "location": "San Isidro, Provincia de Buenos Aires",
-                "modalidad": "Presencial",
-                "fecha": "Hace 1 día",
-                "description": "Liderar la gestión de seguridad patrimonial de la operación, coordinando procesos, controlando proveedores y planificando la protección integral de instalaciones.",
-                "job_url": "https://www.opcionempleo.com.ar/trabajo-proteccion-patrimonial-seguridad/Buenos-Aires"
-            },
-            {
-                "id": 4,
-                "empresa": "AMURA Consultores Asociados",
-                "title": f"Jefe de {puesto}",
-                "location": "Palermo, CABA (Buenos Aires)",
-                "modalidad": "Presencial",
-                "fecha": "Hace 1 día",
-                "description": "Garantizar la protección integral de complejo edilicio corporativo resguardando personas, bienes e instalaciones mediante la planificación y coordinación de equipos y protocolos.",
-                "job_url": "https://www.opcionempleo.com.ar/trabajo-proteccion-patrimonial-seguridad/Buenos-Aires"
-            }
-        ]
-        
-        # Filtrar resultados según la modalidad y la palabra clave
-        ofertas_filtradas = []
-        for oferta in ofertas_encontradas:
-            if tipo_jornada != "Todos" and oferta["modalidad"] != tipo_jornada:
-                continue
-            
-            if palabra_clave.strip():
-                texto_completo = (oferta["title"] + " " + oferta["description"]).lower()
-                if palabra_clave.lower() not in texto_completo:
-                    continue
+    if not AI_AVAILABLE:
+        st.error("Falta instalar la librería de IA. Asegúrate de incluir 'google-genai' en tus dependencias.")
+    else:
+        with st.spinner("Conectando con la web en tiempo real para buscar vacantes actuales..."):
+            try:
+                # Inicializar el cliente de IA usando la API Key configurada en Streamlit Secrets
+                client = genai.Client()
+                
+                # Prompt estructurado para que la IA busque en Google y devuelva un formato JSON limpio
+                prompt_busqueda = f"""
+                Busca en la web ofertas de empleo reales y recientes para el puesto de '{puesto}' en '{ubicacion}'.
+                Encuentra al menos 3 o 4 ofertas reales publicadas recientemente.
+                Devuelve la respuesta EXCLUSIVAMENTE en formato de lista JSON válida de objetos, sin texto adicional antes ni después.
+                Cada objeto debe tener exactamente estas claves:
+                - "empresa": Nombre de la empresa o consultora.
+                - "title": Título exacto del puesto.
+                - "location": Ubicación detallada.
+                - "modalidad": "Presencial", "Híbrido" o "Remoto".
+                - "fecha": Cuándo se publicó o "Reciente".
+                - "description": Breve resumen de las tareas o requisitos.
+                - "job_url": URL real o enlace web de la oferta si está disponible (o enlace al portal de empleo donde se encuentra).
+                """
+                
+                response = client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=prompt_busqueda,
+                    config=types.GenerateContentConfig(
+                        tools=[types.Tool(google_search=types.GoogleSearch())],
+                        temperature=0.1
+                    ),
+                )
+                
+                # Limpiar y convertir la respuesta de la IA en datos que la app pueda mostrar
+                texto_respuesta = response.text.strip()
+                if texto_respuesta.startswith("```json"):
+                    texto_respuesta = texto_respuesta[7:]
+                if texto_respuesta.endswith("```"):
+                    texto_respuesta = texto_respuesta[:-3]
+                
+                ofertas_encontradas = json.loads(texto_respuesta.strip())
+                
+                # Asignar un ID único a cada oferta traída de la web
+                for idx, oferta in enumerate(ofertas_encontradas, start=1):
+                    oferta["id"] = idx
+                
+                # Aplicar tus filtros (Jornada y Palabra clave) sobre los resultados reales
+                ofertas_filtradas = []
+                for oferta in ofertas_encontradas:
+                    mod = oferta.get("modalidad", "Presencial")
+                    if tipo_jornada != "Todos" and mod.lower() != tipo_jornada.lower():
+                        continue
                     
-            ofertas_filtradas.append(oferta)
-            
-        st.session_state.jobs = ofertas_filtradas
+                    if palabra_clave.strip():
+                        texto_completo = (oferta.get("title", "") + " " + oferta.get("description", "")).lower()
+                        if palabra_clave.lower() not in texto_completo:
+                            continue
+                            
+                    ofertas_filtradas.append(oferta)
+                    
+                st.session_state.jobs = ofertas_filtradas
+
+            except Exception as e:
+                st.error(f"No se pudieron cargar las ofertas en vivo en este momento. Inténtalo de nuevo. Detalle: {e}")
 
 # --- MOSTRAR RESULTADOS EN TARJETAS ---
 if "jobs" in st.session_state and st.session_state.jobs:
-    st.success(f"¡Se encontraron **{len(st.session_state.jobs)}** ofertas activas compatibles con tus filtros!")
+    st.success(f"¡Se encontraron **{len(st.session_state.jobs)}** ofertas activas en la web compatibles con tus filtros!")
     
     for job in st.session_state.jobs:
         job_id = job["id"]
         with st.container(border=True):
             col1, col2 = st.columns([3, 1])
             with col1:
-                st.subheader(job['title'])
-                st.write(f"**Empresa:** {job['empresa']} | **Ubicación:** {job['location']} | **Modalidad:** {job['modalidad']} | 🕒 {job['fecha']}")
-                st.write(job['description'])
+                st.subheader(job.get('title', 'Puesto sin título'))
+                st.write(f"**Empresa:** {job.get('empresa', 'No especificada')} | **Ubicación:** {job.get('location', '')} | **Modalidad:** {job.get('modalidad', '')} | 🕒 {job.get('fecha', '')}")
+                st.write(job.get('description', ''))
                 
                 # Indicador inteligente basado en tu CV
                 if st.session_state.cv_texto:
@@ -151,17 +163,21 @@ if "jobs" in st.session_state and st.session_state.jobs:
                 # Guardar cambios en la sesión
                 st.session_state.postulaciones[job_id] = {"estado": nuevo_estado, "nota": nueva_nota}
                 
-                # Generador automático de mensajes para postulaciones
+                # Generador automático de mensajes para postulaciones (Punto 4)
                 with st.expander("✨ Generar mensaje de presentación para esta oferta"):
-                    mensaje_generado = f"Estimados de {job['empresa']},\n\nMe pongo en contacto con ustedes con mucho interés en la posición de {job['title']}. Cuento con sólida trayectoria en seguridad patrimonial, gestión de riesgos y control operativo, ajustándome perfectamente a los requerimientos que solicitan.\n\nQuedo a su entera disposición para coordinar una entrevista y conversar en detalle sobre mi perfil.\n\nAtentamente."
+                    mensaje_generado = f"Estimados de {job.get('empresa', 'la empresa')},\n\nMe pongo en contacto con ustedes con mucho interés en la posición de {job.get('title', 'el puesto')}. Cuento con sólida trayectoria en seguridad patrimonial, gestión de riesgos y control operativo, ajustándome perfectamente a los requerimientos que solicitan.\n\nQuedo a su entera disposición para coordinar una entrevista y conversar en detalle sobre mi perfil.\n\nAtentamente."
                     st.text_area("Copia este mensaje adaptado:", value=mensaje_generado, height=150, key=f"msg_{job_id}")
                 
             with col2:
                 st.write("") 
                 st.write("")
-                st.link_button("🔗 Ver oferta original", job['job_url'])
+                url_destino = job.get('job_url', '#')
+                if url_destino.startswith('http'):
+                    st.link_button("🔗 Ver oferta original", url_destino)
+                else:
+                    st.markdown(f"[🔗 Buscar enlace]({url_destino})")
 else:
     if "jobs" in st.session_state and len(st.session_state.jobs) == 0 and buscar:
-        st.warning("No hay ofertas que coincidan con esos filtros o con la palabra clave ingresada.")
+        st.warning("No se encontraron ofertas web activas con esos filtros en este momento.")
     else:
-        st.info("👈 Configura tus preferencias en la barra lateral izquierda y presiona **🔍 Buscar Ofertas Disponibles** para ver los puestos reales en Buenos Aires.")
+        st.info("👈 Configura tus preferencias en la barra lateral izquierda y presiona **🔍 Buscar Ofertas Reales en la Web** para consultar internet en tiempo real.")
