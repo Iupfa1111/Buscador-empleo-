@@ -26,7 +26,9 @@ ubicacion = st.sidebar.text_input("Ubicación", value="Buenos Aires")
 
 st.sidebar.subheader("Filtros Avanzados")
 tipo_jornada = st.sidebar.selectbox("Tipo de Jornada", ["Todos", "Presencial", "Híbrido", "Remoto"])
-antiguedad = st.sidebar.selectbox("Antigüedad de la oferta", ["Cualquiera", "Últimas 24 horas", "Última semana"])
+
+# NUEVO (Punto 3): Filtro por palabras clave específicas en la descripción
+palabra_clave = st.sidebar.text_input("Palabra clave requerida (ej. CCTV, ISO, Supervisor)", value="")
 
 st.sidebar.markdown("---")
 cv_file = st.sidebar.file_uploader("Sube tu CV (PDF o Texto)", type=["pdf", "txt"])
@@ -51,12 +53,11 @@ buscar = st.sidebar.button("🔍 Buscar Ofertas Disponibles", type="primary")
 
 # --- CUERPO PRINCIPAL DE LA APP ---
 st.title("💼 Buscador de Empleo Automatizado")
-st.write("Gestiona, filtra y haz seguimiento de tus ofertas laborales ideales desde un solo lugar.")
+st.write("Gestiona, filtra y redacta mensajes personalizados para tus ofertas laborales ideales.")
 
 if buscar:
     with st.spinner("Analizando tu perfil y buscando ofertas vigentes..."):
-        # Aquí es donde la IA simula la búsqueda conectada a la web en tiempo real
-        # (En un entorno de agente avanzado, este bloque recopila los links y datos frescos de la web)
+        # Ofertas simuladas de alta calidad
         ofertas_encontradas = [
             {
                 "id": 1,
@@ -65,7 +66,7 @@ if buscar:
                 "location": ubicacion,
                 "modalidad": "Presencial",
                 "fecha": "Hace 4 horas",
-                "description": "Importante empresa de seguridad busca especialista en seguridad patrimonial para control de accesos, gestión de riesgos y coordinación de esquemas de vigilancia corporativa.",
+                "description": "Importante empresa de seguridad busca especialista en seguridad patrimonial para control de accesos, gestión de riesgos y manejo avanzado de sistemas CCTV.",
                 "job_url": "https://www.linkedin.com/jobs/"
             },
             {
@@ -75,7 +76,7 @@ if buscar:
                 "location": ubicacion,
                 "modalidad": "Híbrido",
                 "fecha": "Hace 1 día",
-                "description": "Orientamos la búsqueda a profesionales con experiencia en prevención de pérdidas, manejo de centros de monitoreo (CCTV) y liderazgo de equipos operativos.",
+                "description": "Orientamos la búsqueda a profesionales con experiencia en prevención de pérdidas, auditorías bajo normas ISO y liderazgo de equipos operativos.",
                 "job_url": "https://ar.indeed.com/"
             },
             {
@@ -90,11 +91,18 @@ if buscar:
             }
         ]
         
-        # Filtrar resultados según lo que elegiste en la barra lateral
+        # Filtrar resultados según la modalidad y la nueva palabra clave (Punto 3)
         ofertas_filtradas = []
         for oferta in ofertas_encontradas:
             if tipo_jornada != "Todos" and oferta["modalidad"] != tipo_jornada:
                 continue
+            
+            # Si se escribió una palabra clave, verificar que esté en el título o descripción
+            if palabra_clave.strip():
+                texto_completo = (oferta["title"] + " " + oferta["description"]).lower()
+                if palabra_clave.lower() not in texto_completo:
+                    continue
+                    
             ofertas_filtradas.append(oferta)
             
         st.session_state.jobs = ofertas_filtradas
@@ -133,8 +141,13 @@ if "jobs" in st.session_state and st.session_state.jobs:
                 with col_n2:
                     nueva_nota = st.text_input("Notas personales", value=nota_actual, key=f"nota_{job_id}")
                 
-                # Guardar cambios en la memoria de la sesión
+                # Guardar cambios en la sesión
                 st.session_state.postulaciones[job_id] = {"estado": nuevo_estado, "nota": nueva_nota}
+                
+                # NUEVO (Punto 4): Generador automático de mensajes para postulaciones
+                with st.expander("✨ Generar mensaje de presentación para esta oferta"):
+                    mensaje_generado = f"Estimados de {job['empresa']},\n\nMe pongo en contacto con ustedes con mucho interés en la posición de {job['title']}. Cuento con sólida trayectoria en seguridad patrimonial, gestión de riesgos y control operativo, ajustándome perfectamente a los requerimientos que solicitan.\n\nQuedo a su entera disposición para coordinar una entrevista y conversar en detalle sobre mi perfil.\n\nAtentamente."
+                    st.text_area("Copia este mensaje adaptado:", value=mensaje_generado, height=150, key=f"msg_{job_id}")
                 
             with col2:
                 st.write("") # Espaciador visual
@@ -142,6 +155,6 @@ if "jobs" in st.session_state and st.session_state.jobs:
                 st.link_button("🔗 Ver oferta original", job['job_url'])
 else:
     if "jobs" in st.session_state and len(st.session_state.jobs) == 0 and buscar:
-        st.warning("No hay ofertas que coincidan exactamente con esos filtros. Prueba cambiando el tipo de jornada.")
+        st.warning("No hay ofertas que coincidan con esos filtros o con la palabra clave ingresada.")
     else:
         st.info("👈 Configura tus preferencias en la barra lateral izquierda y presiona **Buscar Ofertas Disponibles** para comenzar.")
